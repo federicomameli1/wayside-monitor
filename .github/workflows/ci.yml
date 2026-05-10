@@ -25,10 +25,19 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install pytest
+        run: pip install pytest pytest-json-report
 
       - name: Run tests
-        run: pytest tests/ -v --tb=short
+        run: |
+          pytest tests/ -v --tb=short \
+            --json-report --json-report-file=test-report.json
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wayside-test-report
+          path: test-report.json
 
   notify-challenge-app:
     needs: test
@@ -45,4 +54,12 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/$CHALLENGE_APP_REPO/dispatches" \
-            -d "{\"event_type\": \"wayside-monitor-push\", \"client_payload\": {\"repo\": \"${{ github.repository }}\", \"ref\": \"${{ github.sha }}\"}}"
+            -d "{
+              \"event_type\": \"wayside-monitor-push\",
+              \"client_payload\": {
+                \"repo\": \"${{ github.repository }}\",
+                \"ref\": \"${{ github.sha }}\",
+                \"subject_run_id\": \"${{ github.run_id }}\",
+                \"test_conclusion\": \"${{ needs.test.result }}\"
+              }
+            }"
