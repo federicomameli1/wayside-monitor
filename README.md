@@ -1,4 +1,4 @@
-# Wayside Monitor System
+# Wayside Monitor System (WMS)
 
 Real-time trackside anomaly detection pipeline for railway infrastructure.
 Collects sensor data, classifies anomalies, and dispatches alerts to operators.
