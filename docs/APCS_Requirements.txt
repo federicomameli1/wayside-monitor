@@ -1,0 +1,164 @@
+Project        : Wayside Monitor System (WMS)
+Document       : Requirements Master List
+Candidate      : 2.1.0-rc.1
+Last update    : 10-May-2026
+
+Legend
+------
+[MUST]   Hard requirement. Failure to satisfy blocks promotion.
+[SHOULD] Recommended. A miss yields a soft warning, not a HOLD.
+[COULD]  Nice-to-have. Tracked for future iterations.
+
+--------------------------------------------------------------------
+1. Sensor collection
+--------------------------------------------------------------------
+
+REQ-WMS-001 [MUST]    The sensor-collector module shall acquire data
+                      from all registered trackside sensors at a
+                      minimum sampling rate of 10 Hz with no sustained
+                      data loss over a 60-second nominal window.
+
+REQ-WMS-002 [MUST]    The sensor-collector shall validate each incoming
+                      reading against a known sensor-type registry.
+                      Readings from unregistered sensor types shall be
+                      discarded and logged as WARN, not passed
+                      downstream.
+
+REQ-WMS-003 [SHOULD]  The sensor-collector shall support hot-reload of
+                      the sensor registry configuration file without
+                      requiring a process restart.
+
+REQ-WMS-004 [COULD]   The sensor-collector shall expose a /metrics
+                      endpoint compatible with the Prometheus scrape
+                      format, reporting per-sensor sample counts and
+                      drop rates.
+
+--------------------------------------------------------------------
+2. Anomaly detection
+--------------------------------------------------------------------
+
+REQ-WMS-005 [MUST]    The anomaly-engine shall process each ingested
+                      sensor reading and emit a classification result
+                      within 500 ms of receipt.
+
+REQ-WMS-006 [MUST]    The anomaly-engine shall classify rail
+                      temperature readings above 60 °C as CRITICAL
+                      regardless of ambient conditions.
+
+REQ-WMS-007 [MUST]    The anomaly-engine shall classify vibration
+                      readings using a validated statistical model.
+                      Any change to the vibration classification model
+                      requires validation against the reference
+                      dataset (≥ 95 % accuracy on 200-sample suite)
+                      before DEV-to-TEST promotion.
+
+REQ-WMS-008 [MUST]    The anomaly-engine vibration classifier shall
+                      produce exactly three severity classes:
+                        NOMINAL   — within expected operating range
+                        DEGRADED  — outside range, monitor closely
+                        CRITICAL  — immediate intervention required
+                      No other class labels are permitted in output
+                      payloads consumed by downstream modules.
+
+REQ-WMS-009 [MUST]    The anomaly-engine shall not lose any event
+                      received from sensor-collector. If internal
+                      queue depth exceeds 1 000 items the module
+                      shall emit a CRITICAL health alert and apply
+                      back-pressure.
+
+REQ-WMS-010 [SHOULD]  The anomaly-engine shall attach a confidence
+                      score (0.0–1.0) to every classification result
+                      to support post-hoc audit.
+
+REQ-WMS-011 [SHOULD]  The anomaly-engine shall log the model version
+                      identifier in every emitted event to allow
+                      traceability back to the exact classifier build
+                      used at classification time.
+
+--------------------------------------------------------------------
+3. Alert dispatching
+--------------------------------------------------------------------
+
+REQ-WMS-012 [MUST]    The alert-dispatcher shall deliver CRITICAL
+                      alerts to all registered operator endpoints
+                      within 2 seconds of receiving a CRITICAL
+                      classification from anomaly-engine.
+
+REQ-WMS-013 [MUST]    The alert-dispatcher shall structure every
+                      outbound notification as a JSON payload
+                      containing at minimum:
+                        - event_id   (UUID)
+                        - sensor_id  (string)
+                        - severity   (NOMINAL | DEGRADED | CRITICAL)
+                        - value      (float)
+                        - unit       (string)
+                        - timestamp  (ISO-8601 UTC)
+                        - model_ver  (string)
+
+REQ-WMS-014 [MUST]    The alert-dispatcher shall implement exponential
+                      back-off retry (max 3 attempts) for failed
+                      deliveries. After 3 failures the event shall be
+                      written to the dead-letter log and a health
+                      alert shall be raised.
+
+REQ-WMS-015 [MUST]    The alert-dispatcher payload schema shall remain
+                      backward compatible within the 1.x minor line.
+                      A breaking schema change requires a major version
+                      bump and a coordinated migration plan.
+
+REQ-WMS-016 [SHOULD]  The alert-dispatcher shall support at least two
+                      operator endpoint types: HTTP webhook and
+                      structured syslog (RFC 5424).
+
+REQ-WMS-017 [COULD]   The alert-dispatcher shall support batching of
+                      NOMINAL-severity alerts to reduce endpoint
+                      traffic during high-throughput periods.
+
+--------------------------------------------------------------------
+4. Inter-module contracts
+--------------------------------------------------------------------
+
+REQ-WMS-018 [MUST]    The internal event schema between
+                      sensor-collector and anomaly-engine shall be
+                      versioned. A minor version increment is
+                      permitted only if the new fields are optional
+                      and default-safe for consumers on the prior
+                      minor.
+
+REQ-WMS-019 [MUST]    The internal event schema between
+                      anomaly-engine and alert-dispatcher shall be
+                      versioned. The severity field MUST use only
+                      the three labels defined in REQ-WMS-008.
+
+REQ-WMS-020 [MUST]    All inter-module communication shall use the
+                      internal message bus (Redis Streams). Direct
+                      function calls across module boundaries are
+                      prohibited in the production code path.
+
+--------------------------------------------------------------------
+5. Reliability and operations
+--------------------------------------------------------------------
+
+REQ-WMS-021 [MUST]    Each module shall expose a /health endpoint
+                      returning HTTP 200 with {"status": "ok"} when
+                      healthy and HTTP 503 with {"status": "degraded",
+                      "reason": "<text>"} otherwise.
+
+REQ-WMS-022 [MUST]    No module shall silently swallow exceptions on
+                      the hot path. All unhandled exceptions shall be
+                      logged at ERROR level with a full stack trace
+                      before the process exits or the coroutine is
+                      abandoned.
+
+REQ-WMS-023 [SHOULD]  The system shall achieve a sustained throughput
+                      of at least 500 sensor events per second across
+                      the full pipeline under lab conditions.
+
+REQ-WMS-024 [SHOULD]  All modules shall emit structured logs in JSON
+                      format to stdout, compatible with the platform
+                      log aggregation stack.
+
+REQ-WMS-025 [COULD]   The system shall support graceful shutdown:
+                      on SIGTERM each module shall drain its in-flight
+                      queue before exiting, with a maximum drain
+                      window of 5 seconds.

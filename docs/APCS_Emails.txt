@@ -1,0 +1,240 @@
+Project        : Wayside Monitor System (WMS)
+Document       : Release Email Thread
+Candidate      : 2.1.0-rc.1
+Last update    : 10-May-2026
+
+This file contains the release-relevant email exchanges between
+module owners, the test engineer, the safety officer, and the
+release coordinator for the 2.1.0-rc.1 candidate.
+Emails are listed in chronological order, oldest first.
+
+====================================================================
+EMAIL 01
+--------------------------------------------------------------------
+Date   : 28-Apr-2026 09:14 UTC
+From   : Marco Ferretti <m.ferretti@wms-dev.internal>  (anomaly-engine owner)
+To     : release@wms-dev.internal
+Subject: [WMS] anomaly-engine 2.1.0-rc.1 — feature freeze declaration
+--------------------------------------------------------------------
+
+Team,
+
+I'm declaring feature freeze on anomaly-engine branch
+`feature/vibration-3class`. Here is a summary of what is included.
+
+WHAT CHANGED
+  The 2-class vibration threshold model (NOMINAL / CRITICAL) has been
+  replaced with a 3-class statistical model trained on 18 months of
+  trackside data from the Bologna–Florence high-speed corridor.
+  The new classes are: NOMINAL, DEGRADED, CRITICAL.
+
+  The DEGRADED class is intended to give operators early warning of
+  developing anomalies before they reach the CRITICAL threshold.
+  This addresses the operational feedback from the Firenze Sud depot
+  logged in incident report INC-2025-317.
+
+API COMPATIBILITY
+  Input schema: unchanged (schema v1.1).
+  Output schema: bumped to v1.2. The new field `confidence` is optional
+  and defaults to null for consumers that do not declare support for it.
+  The NOMINAL and CRITICAL label values are preserved. DEGRADED is new.
+
+  Consumers that enumerate all possible severity labels (rather than
+  treating unknown labels as non-critical) must be updated. I have
+  already coordinated with Giulia (alert-dispatcher) — see her reply.
+
+ARTEFACT
+  vibration_model_v2.pkl
+  SHA-256: a3f9e2b14cc87d3f6501a9e4bc2f77a8d1e043bc9f28a51d6c3b0e7f4d9a2c1
+
+Next step: Luca to run TC-WMS-003 against the reference dataset.
+
+Marco
+
+====================================================================
+EMAIL 02
+--------------------------------------------------------------------
+Date   : 28-Apr-2026 14:51 UTC
+From   : Giulia Rossi <g.rossi@wms-dev.internal>  (alert-dispatcher owner)
+To     : release@wms-dev.internal
+Subject: Re: [WMS] anomaly-engine 2.1.0-rc.1 — feature freeze declaration
+--------------------------------------------------------------------
+
+Marco, team,
+
+Confirming alert-dispatcher 1.2.0-rc.1 is ready for coordinated
+deployment with anomaly-engine 2.1.0-rc.1.
+
+CHANGES IN 1.2.0-rc.1
+  - `severity` field now accepts NOMINAL | DEGRADED | CRITICAL.
+    Payload schema version bumped from 1.0 to 1.1.
+  - DEGRADED alerts routed to the new "monitor" endpoint group.
+    CRITICAL routing is unchanged.
+  - `model_ver` field added, passed through from the anomaly-engine event.
+
+IMPORTANT: 1.2.0-rc.1 is NOT backward compatible with anomaly-engine
+2.0.x. The alert-dispatcher now requires the `severity` field to be
+present and to be one of the three accepted values. Old anomaly-engine
+versions that could send unrecognised values will cause parse errors.
+
+Deployment order is mandatory: anomaly-engine first, then
+alert-dispatcher. I've updated the VDD accordingly.
+
+Giulia
+
+====================================================================
+EMAIL 03
+--------------------------------------------------------------------
+Date   : 05-May-2026 11:03 UTC
+From   : Luca Martinelli <l.martinelli@wms-dev.internal>  (test engineer)
+To     : release@wms-dev.internal
+Subject: Re: [WMS] anomaly-engine 2.1.0-rc.1 — TC-WMS-003 results
+--------------------------------------------------------------------
+
+Team,
+
+I have completed TC-WMS-003 (vibration model accuracy validation)
+against the 200-sample reference dataset.
+
+RESULT: PASS
+  Correct: 194 / 200
+  Accuracy: 97.2 %
+  Threshold: 95 % (REQ-WMS-007)
+
+MISCLASSIFICATIONS (2 samples):
+  Sample IDs 142 and 187 — both are DEGRADED ground truth, predicted
+  as NOMINAL. Both occur under low signal-to-noise conditions (SNR < 3 dB).
+  These edge cases are documented but are NOT safety-critical: the
+  CRITICAL threshold for rail temperature is rule-based (REQ-WMS-006)
+  and is independent of the statistical model.
+
+I am logging the two misclassifications as a LOW-severity finding in
+the defect register. I recommend scheduling a targeted model improvement
+for v2.2 that addresses the low-SNR regime.
+
+TC-WMS-003: PASS. No blocking issues.
+
+Luca
+
+====================================================================
+EMAIL 04
+--------------------------------------------------------------------
+Date   : 06-May-2026 09:22 UTC
+From   : Sofia Bianchi <s.bianchi@wms-dev.internal>  (safety officer)
+To     : release@wms-dev.internal
+Subject: Re: [WMS] anomaly-engine 2.1.0-rc.1 — DEGRADED label — safety query
+--------------------------------------------------------------------
+
+Team,
+
+I reviewed the feature freeze declaration and the test results.
+I have one question that needs to be resolved before I can sign off
+on the DEV-to-TEST promotion.
+
+The original REQ-WMS-007 and REQ-WMS-008 were written when the model
+had only two classes (NOMINAL, CRITICAL). The introduction of DEGRADED
+as a third class changes the operational semantics: operators receiving
+a DEGRADED alert must know what action to take.
+
+QUESTION: Is "DEGRADED" covered by the existing safety analysis, or
+does it require a delta safety review?
+
+I am not blocking on this — I want to hear from the module owner and
+the release coordinator before the human gate review.
+
+Sofia
+
+====================================================================
+EMAIL 05
+--------------------------------------------------------------------
+Date   : 07-May-2026 10:45 UTC
+From   : Marco Ferretti <m.ferretti@wms-dev.internal>
+To     : release@wms-dev.internal
+Subject: Re: [WMS] anomaly-engine 2.1.0-rc.1 — DEGRADED label — response
+--------------------------------------------------------------------
+
+Sofia,
+
+Thank you for raising this. My response:
+
+1. REQ-WMS-008 was updated in the requirements master list (this
+   release) to explicitly define the three permitted classes including
+   DEGRADED. The requirement change was reviewed and approved by the
+   systems team on 25-Apr-2026.
+
+2. The DEGRADED class does NOT trigger safety-critical actions. The
+   only safety-critical action is triggered by CRITICAL, which uses
+   the existing rule-based path (REQ-WMS-006) that is independent of
+   the statistical model. DEGRADED is an early-warning tier: it
+   generates a notification to the "monitor" endpoint group and
+   requires operator acknowledgement within 4 hours, but does NOT
+   require track closure or speed restriction.
+
+3. The safety analysis for CRITICAL remains unchanged. A delta review
+   is not required because DEGRADED sits below the safety boundary.
+
+4. Operator runbooks for DEGRADED are in draft. They will be
+   finalised before TEST-to-PROD promotion as a gate condition
+   (documented in the VDD open issues).
+
+I believe Sofia's concern is addressed. If you agree, the safety
+query is closed and we can proceed to the DEV-to-TEST gate.
+
+Marco
+
+====================================================================
+EMAIL 06
+--------------------------------------------------------------------
+Date   : 08-May-2026 08:30 UTC
+From   : Sofia Bianchi <s.bianchi@wms-dev.internal>
+To     : release@wms-dev.internal
+Subject: Re: [WMS] anomaly-engine 2.1.0-rc.1 — DEGRADED label — closed
+--------------------------------------------------------------------
+
+Marco,
+
+Confirmed. Marco's response addresses my concern.
+
+The requirement update to REQ-WMS-008 and the separation between the
+DEGRADED early-warning tier and the rule-based CRITICAL path are
+sufficient for DEV-to-TEST promotion.
+
+Condition for PROD: operator runbooks for DEGRADED must be finalised
+and reviewed by me before the TEST-to-PROD gate. Marco has committed
+to this in the VDD.
+
+Safety query: CLOSED.
+
+Sofia
+
+====================================================================
+EMAIL 07
+--------------------------------------------------------------------
+Date   : 09-May-2026 16:00 UTC
+From   : Elena Conti <e.conti@wms-dev.internal>  (release coordinator)
+To     : release@wms-dev.internal
+Subject: [WMS] 2.1.0-rc.1 — DEV-to-TEST promotion request
+--------------------------------------------------------------------
+
+Team,
+
+All pre-conditions for DEV-to-TEST promotion are met:
+
+  [x] Feature freeze declared (Email 01)
+  [x] alert-dispatcher 1.2.0-rc.1 ready (Email 02)
+  [x] TC-WMS-003 PASS, 97.2 % accuracy (Email 03)
+  [x] Safety query raised and closed (Emails 04–06)
+  [x] TC-WMS-001 PASS (Luca, offline confirmation 08-May)
+  [x] TC-WMS-002 PASS (Luca, offline confirmation 08-May)
+  [x] TC-WMS-004 through TC-WMS-009 PASS (CI run #247, 09-May)
+  [x] TC-WMS-010, TC-WMS-011 PASS with soft warning on confidence
+      field missing in one legacy payload — non-blocking
+  [x] TC-WMS-012 checksum verified by CI (a3f9…d821 confirmed)
+
+Open items (non-blocking for TEST gate):
+  [ ] Operator runbooks for DEGRADED tier (required for PROD gate)
+  [ ] confidence field surfaced in ops dashboard (nice-to-have)
+
+Requesting human approval via hitachi-test-approval gate.
+
+Elena

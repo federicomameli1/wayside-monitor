@@ -1,0 +1,54 @@
+name: WMS CI
+
+on:
+  push:
+    branches: ["main", "dev"]
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+concurrency:
+  group: wms-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install pytest
+
+      - name: Run tests
+        run: pytest tests/ -v --tb=short
+
+  notify-challenge-app:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Notify challenge-app agent
+        env:
+          CHALLENGE_APP_WEBHOOK: ${{ secrets.CHALLENGE_APP_WEBHOOK }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          curl -s -X POST "$CHALLENGE_APP_WEBHOOK" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "repo": "${{ github.repository }}",
+              "ref": "${{ github.sha }}",
+              "event": "push",
+              "branch": "${{ github.ref_name }}"
+            }'

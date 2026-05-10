@@ -1,0 +1,80 @@
+Project        : Wayside Monitor System (WMS)
+Document       : Module / Version Inventory
+Candidate      : 2.1.0-rc.1
+Last update    : 10-May-2026
+
+Module / Component                     Candidate Version    Last Stable    Status
+----------------------------------------------------------------------------------
+wms/sensor-collector                   1.3.0                1.3.0          UNCHANGED
+wms/anomaly-engine                     2.1.0-rc.1           2.0.1          CHANGED
+wms/alert-dispatcher                   1.2.0-rc.1           1.1.3          CHANGED
+config/thresholds.yaml                 1.1.0                1.1.0          UNCHANGED
+.github/workflows/ci.yml               1.0.2                1.0.1          CHANGED
+deploy/docker/Dockerfile               2026.04.15           2026.04.15     UNCHANGED
+deploy/helm/wms-chart                  0.3.0                0.2.2          CHANGED
+
+Notes
+-----
+  sensor-collector (1.3.0)
+    No changes in this candidate. Confirmed compatible with the new
+    anomaly-engine event schema (schema v1.2, optional fields, default-safe).
+
+  anomaly-engine (2.1.0-rc.1 ← 2.0.1)
+    Core change: vibration classifier upgraded from a 2-class threshold
+    model to a 3-class statistical model (NOMINAL / DEGRADED / CRITICAL).
+    The new model was trained on 18 months of trackside data from the
+    Bologna–Florence high-speed corridor.
+    API surface:
+      - /classify endpoint: input schema unchanged (schema v1.2).
+      - Output event: new optional field `confidence` (float, 0.0–1.0).
+        Consumers on 2.0.x that ignore unknown fields are unaffected.
+      - Severity labels: the old 2-class output (NOMINAL / CRITICAL) is
+        replaced by the 3-class output (NOMINAL / DEGRADED / CRITICAL).
+        This is a breaking change for consumers that pattern-match on the
+        complete set of possible labels. See REQ-WMS-008.
+    Dependencies:
+      - Requires alert-dispatcher ≥ 1.2.0 (DEGRADED label support).
+      - Requires sensor-collector ≥ 1.2.0 (satisfied by 1.3.0 stable).
+    Model artefact:
+      - vibration_model_v2.pkl (SHA-256: a3f9…d821)
+      - Validated: 97.2 % accuracy on 200-sample reference suite (TC-WMS-003).
+
+  alert-dispatcher (1.2.0-rc.1 ← 1.1.3)
+    Updated to handle the new DEGRADED severity class from anomaly-engine
+    2.1.0. Changes:
+      - Payload schema: `severity` field now accepts NOMINAL | DEGRADED |
+        CRITICAL (was NOMINAL | CRITICAL). Schema version bumped 1.0 → 1.1.
+      - Routing: DEGRADED alerts routed to a new "monitor" endpoint group;
+        CRITICAL routing unchanged.
+      - Retry policy: unchanged (exponential back-off, 3 attempts).
+    Backward compatibility:
+      - 1.2.0 is NOT backward compatible with anomaly-engine 2.0.x payloads
+        if those payloads omit the `severity` field. The field is required
+        in schema v1.1. Coordinated deployment with anomaly-engine 2.1.0 is
+        mandatory (see VDD deployment order).
+
+  ci.yml (1.0.2 ← 1.0.1)
+    Added `anomaly-engine` model artefact checksum verification step
+    after the unit-test job to ensure the model file bundled in the
+    Docker image matches the validated SHA-256 recorded in this document.
+
+  wms-chart (0.3.0 ← 0.2.2)
+    Added `anomalyEngine.modelVersion` value to propagate the model
+    version string into the anomaly-engine pod as an environment variable
+    (consumed by REQ-WMS-011 for per-event model traceability).
+
+Dependency matrix
+-----------------
+  alert-dispatcher 1.2.x  requires  anomaly-engine  ≥ 2.1.0
+  anomaly-engine   2.1.x  requires  sensor-collector ≥ 1.2.0
+  sensor-collector 1.3.0  has no upstream WMS dependency
+
+Deployment order (mandatory for this candidate)
+-----------------------------------------------
+  1. sensor-collector  (no change, already running)
+  2. anomaly-engine    2.1.0-rc.1
+  3. alert-dispatcher  1.2.0-rc.1
+
+Rolling alert-dispatcher before anomaly-engine will cause DEGRADED events
+from the new engine to be rejected by the old dispatcher (unknown severity
+label). This constitutes a HOLD condition if deployment order is violated.

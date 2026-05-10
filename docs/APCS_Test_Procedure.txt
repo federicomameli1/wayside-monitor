@@ -1,0 +1,174 @@
+Project        : Wayside Monitor System (WMS)
+Document       : Pre-Promotion Test Procedure
+Candidate      : 2.1.0-rc.1
+Last update    : 10-May-2026
+
+Scope
+-----
+This document lists the test cases that must be executed and passed
+before the 2.1.0-rc.1 candidate may be promoted from DEV to TEST.
+Each test case traces back to one or more requirements.
+
+Pass criteria: all [MUST] test cases pass with no known open defects
+of severity BLOCKER or CRITICAL. [SHOULD] test cases generate a soft
+warning on failure but do not block promotion.
+
+--------------------------------------------------------------------
+TC-WMS-001  Nominal sensor ingestion                        [MUST]
+--------------------------------------------------------------------
+Traces to  : REQ-WMS-001
+Precondition: sensor-collector 1.3.0 running, 8 simulated sensors
+              registered in sensor registry.
+Steps:
+  1. Inject synthetic sensor readings at 12 Hz for 60 seconds across
+     all 8 sensors (5 760 total readings).
+  2. Capture the event count delivered to anomaly-engine inlet stream.
+  3. Compare delivered count to expected count.
+Pass criterion: delivered count ≥ 5 750 (≤ 0.2 % drop rate).
+Notes: transient network hiccups in the test harness are acceptable
+       if they account for fewer than 10 missed events.
+
+--------------------------------------------------------------------
+TC-WMS-002  Unknown sensor type rejection                   [MUST]
+--------------------------------------------------------------------
+Traces to  : REQ-WMS-002
+Steps:
+  1. Inject 10 readings from a sensor type not present in the
+     registry (type id: "UNKNOWN_XR7").
+  2. Verify the anomaly-engine inlet stream receives 0 events.
+  3. Verify sensor-collector logs contain exactly 10 WARN entries
+     with the unknown type id.
+Pass criterion: 0 events forwarded; 10 WARN log lines present.
+
+--------------------------------------------------------------------
+TC-WMS-003  Vibration model accuracy validation             [MUST]
+--------------------------------------------------------------------
+Traces to  : REQ-WMS-007, REQ-WMS-008
+Precondition: anomaly-engine 2.1.0-rc.1 running with
+              vibration_model_v2.pkl loaded.
+Steps:
+  1. Feed the 200-sample reference vibration dataset
+     (datasets/vibration_reference_v2.csv) to the /classify endpoint.
+  2. Compare predicted labels against ground-truth labels.
+  3. Compute overall accuracy.
+Pass criterion: accuracy ≥ 95 %.
+Expected result: 97.2 % (194/200 correct) based on pre-validation run.
+Notes: the two misclassified samples are DEGRADED classified as NOMINAL
+       under low-SNR conditions. Logged in defect register as INFO
+       (non-blocking, scheduled for model v2.2).
+
+--------------------------------------------------------------------
+TC-WMS-004  Rail temperature CRITICAL gate                  [MUST]
+--------------------------------------------------------------------
+Traces to  : REQ-WMS-006, REQ-WMS-012
+Steps:
+  1. Inject a rail temperature reading of 65.3 °C into
+     sensor-collector.
+  2. Start timer.
+  3. Verify anomaly-engine emits a CRITICAL classification.
+  4. Verify alert-dispatcher delivers a CRITICAL alert to the
+     registered test webhook endpoint.
+  5. Stop timer on webhook receipt.
+Pass criterion: webhook received within 2 000 ms of injection;
+                severity field = "CRITICAL"; value field = 65.3.
+
+--------------------------------------------------------------------
+TC-WMS-005  Three-class severity label contract             [MUST]
+--------------------------------------------------------------------
+Traces to  : REQ-WMS-008, REQ-WMS-019
+Steps:
+  1. Inject one vibration reading in each of the three expected
+     operating bands (NOMINAL, DEGRADED, CRITICAL).
+  2. Capture the alert-dispatcher outbound payloads for each.
+  3. Inspect the `severity` field in each payload.
+Pass criterion: severity values are exactly "NOMINAL", "DEGRADED",
+                "CRITICAL" — no other strings, no null values.
+
+--------------------------------------------------------------------
+TC-WMS-006  Alert-dispatcher JSON schema compliance         [MUST]
+--------------------------------------------------------------------
+Traces to  : REQ-WMS-013
+Steps:
+  1. Capture 20 outbound alert payloads from alert-dispatcher 1.2.0
+     under mixed-severity load.
+  2. Validate each payload against the JSON schema in
+     docs/schemas/alert_payload_v1.1.json.
+Pass criterion: all 20 payloads validate with 0 schema errors.
+Required fields checked: event_id, sensor_id, severity, value,
+                          unit, timestamp, model_ver.
+
+--------------------------------------------------------------------
+TC-WMS-007  CRITICAL alert delivery latency under load      [MUST]
+--------------------------------------------------------------------
+Traces to  : REQ-WMS-012, REQ-WMS-023
+Steps:
+  1. Start a background load of 400 NOMINAL events per second through
+     the full pipeline.
+  2. Inject 10 CRITICAL temperature events at 1-second intervals.
+  3. Measure end-to-end delivery latency for each CRITICAL event
+     (injection timestamp to webhook receipt timestamp).
+Pass criterion: all 10 CRITICAL events delivered within 2 000 ms;
+                no CRITICAL event dropped.
+
+--------------------------------------------------------------------
+TC-WMS-008  Retry and dead-letter on endpoint failure       [MUST]
+--------------------------------------------------------------------
+Traces to  : REQ-WMS-014
+Steps:
+  1. Configure the test webhook endpoint to return HTTP 503 for all
+     requests.
+  2. Inject a CRITICAL alert.
+  3. Observe alert-dispatcher retry behaviour.
+  4. After 3 failed attempts, verify the event appears in the
+     dead-letter log.
+  5. Verify a health alert is raised by alert-dispatcher.
+Pass criterion: exactly 3 delivery attempts logged; event present in
+                dead-letter log; health endpoint returns 503.
+
+--------------------------------------------------------------------
+TC-WMS-009  Module health endpoints                         [MUST]
+--------------------------------------------------------------------
+Traces to  : REQ-WMS-021
+Steps:
+  1. Query GET /health on each module (sensor-collector, anomaly-engine,
+     alert-dispatcher) with all dependencies running.
+  2. Stop the Redis Streams broker.
+  3. Query GET /health on each module again within 10 seconds.
+Pass criterion:
+  Step 1 — all three return HTTP 200 {"status": "ok"}.
+  Step 3 — all three return HTTP 503 with non-empty "reason" field.
+
+--------------------------------------------------------------------
+TC-WMS-010  Confidence score presence                       [SHOULD]
+--------------------------------------------------------------------
+Traces to  : REQ-WMS-010, REQ-WMS-013
+Steps:
+  1. Capture 10 outbound alert payloads from alert-dispatcher.
+  2. Inspect the `confidence` field (passed through from
+     anomaly-engine).
+Pass criterion: `confidence` field present in all 10 payloads;
+                values in range [0.0, 1.0].
+Note: failure generates a soft warning, not a HOLD.
+
+--------------------------------------------------------------------
+TC-WMS-011  Model version traceability in payload           [SHOULD]
+--------------------------------------------------------------------
+Traces to  : REQ-WMS-011, REQ-WMS-013
+Steps:
+  1. Capture 5 outbound alert payloads.
+  2. Inspect `model_ver` field.
+Pass criterion: `model_ver` matches the value of the
+                ANOMALY_ENGINE_MODEL_VER environment variable set in
+                the deployment (expected: "vibration_model_v2.pkl").
+Note: failure generates a soft warning, not a HOLD.
+
+--------------------------------------------------------------------
+TC-WMS-012  Model artefact checksum verification            [MUST]
+--------------------------------------------------------------------
+Traces to  : REQ-WMS-007 (model integrity)
+Steps:
+  1. Extract the deployed anomaly-engine container image.
+  2. Compute SHA-256 of the embedded vibration_model_v2.pkl.
+  3. Compare against the reference checksum in the Module Version
+     Inventory (a3f9…d821).
+Pass criterion: checksums match exactly.

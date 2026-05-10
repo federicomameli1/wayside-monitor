@@ -1,0 +1,24 @@
+# WMS anomaly-engine threshold configuration
+# Loaded at startup; hot-reload supported (REQ-WMS-003).
+# Changing these values without a corresponding model validation run
+# is a protocol violation (REQ-WMS-007).
+
+vibration:
+  nominal_max_ms2: 2.5
+  degraded_max_ms2: 5.0
+  # Values above degraded_max_ms2 are classified as CRITICAL.
+
+temperature:
+  critical_celsius: 60.0
+  # Rule-based threshold — independent of statistical model (REQ-WMS-006).
+
+rail_wear:
+  degraded_mm: 5.0
+  critical_mm: 8.0
+
+sensor_registry:
+  sensor_types:
+    TEMPERATURE: celsius
+    VIBRATION: m/s2
+    RAIL_WEAR: mm
+    CURRENT: A

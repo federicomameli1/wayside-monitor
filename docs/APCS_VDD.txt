@@ -1,0 +1,110 @@
+Version Description Document
+
+Project        : Wayside Monitor System (WMS)
+Candidate      : 2.1.0-rc.1
+Target stage   : TEST  (DEV → TEST promotion)
+Promotion gate : pre-test (Agent 4 + human approval)
+Last update    : 10-May-2026
+
+Build identifier
+----------------
+  Image    : ghcr.io/federicomameli1/wayside-monitor:2.1.0-rc.1
+             (digest pinned at GitOps-repo level)
+  Helm     : deploy/helm/wms-chart 0.3.0
+  Source   : commit on branch dev produced by merge of branch
+             `feature/vibration-3class`
+
+Scope of change
+---------------
+This candidate introduces the three-class vibration anomaly classifier
+in anomaly-engine and the corresponding payload update in
+alert-dispatcher. This is the primary change driving the minor version
+bump from 2.0.1 to 2.1.0.
+
+Changed modules:
+
+  anomaly-engine 2.0.1 → 2.1.0-rc.1
+    - Replaced 2-class threshold vibration model (NOMINAL / CRITICAL)
+      with 3-class statistical model (NOMINAL / DEGRADED / CRITICAL).
+    - New model artefact: vibration_model_v2.pkl
+      SHA-256: a3f9e2b14cc87d3f6501a9e4bc2f77a8d1e043bc9f28a51d6c3b0e7f4d9a2c1
+      (abbreviated in inventory: a3f9…d821)
+    - New optional output field: `confidence` (float, 0.0–1.0).
+    - Model version exposed via ANOMALY_ENGINE_MODEL_VER env var.
+    - Internal event schema bumped from v1.1 to v1.2 (backward safe:
+      new field `confidence` is optional, old consumers unaffected).
+
+  alert-dispatcher 1.1.3 → 1.2.0-rc.1
+    - Alert payload schema bumped from v1.0 to v1.1.
+    - `severity` field: now accepts NOMINAL | DEGRADED | CRITICAL.
+    - New routing tier: DEGRADED alerts are routed to the "monitor"
+      endpoint group; CRITICAL routing is unchanged.
+    - `model_ver` field added (passed through from anomaly-engine event).
+
+  ci.yml 1.0.1 → 1.0.2
+    - Added model artefact checksum verification step (TC-WMS-012).
+    - Step runs after unit tests, before the Docker build.
+
+  wms-chart 0.2.2 → 0.3.0
+    - New value: `anomalyEngine.modelVersion` (string).
+    - Propagated as ANOMALY_ENGINE_MODEL_VER env var into the
+      anomaly-engine Deployment.
+
+Out of scope
+------------
+  - Migration of sensor-collector to async I/O (planned for v1.4.0).
+  - DEGRADED alert batching (REQ-WMS-017, deferred to v1.3.0 of
+    alert-dispatcher).
+  - Prometheus /metrics endpoint on sensor-collector (REQ-WMS-004,
+    COULD, no timeline).
+  - Graceful shutdown drain (REQ-WMS-025, COULD, no timeline).
+
+Deliverables
+------------
+  - Container image (multi-arch, linux/amd64 + linux/arm64).
+  - Helm chart wms-chart 0.3.0 (packaged to GHCR by CI).
+  - APCS release bundle in docs/ (this folder).
+  - Validated model artefact vibration_model_v2.pkl bundled in image.
+  - CI workflow .github/workflows/ci.yml updated.
+
+Deployment order
+----------------
+The deployment order is mandatory. See Module Version Inventory for
+details on the breaking dependency.
+
+  1. anomaly-engine   2.1.0-rc.1   (deploy first)
+  2. alert-dispatcher 1.2.0-rc.1   (deploy after anomaly-engine is healthy)
+  sensor-collector remains at 1.3.0 — no restart required.
+
+Risk summary
+------------
+  MEDIUM  — The 3-class classifier introduces a new alert tier
+            (DEGRADED) that operators have not encountered before.
+            Operator runbooks must be updated before PROD promotion.
+            This is tracked as a human gate condition at TEST.
+
+  LOW     — Model accuracy at 97.2 % leaves a small margin below 100 %.
+            Two borderline DEGRADED samples are misclassified as NOMINAL
+            under low-SNR conditions. These are edge cases and are not
+            safety-critical: a missed DEGRADED never suppresses a
+            CRITICAL (the CRITICAL threshold is rule-based, not model-
+            driven — see REQ-WMS-006).
+
+  LOW     — alert-dispatcher 1.2.0 is NOT backward compatible with
+            anomaly-engine 2.0.x. Incorrect deployment order will cause
+            DEGRADED events to be rejected. CI enforces the checksum
+            verification but cannot enforce deployment order in the
+            target environment; this is a process control.
+
+Open issues
+-----------
+  None blocking DEV-to-TEST promotion.
+
+Known limitations
+-----------------
+  - The `confidence` field is not yet surfaced in the ops dashboard.
+    Operators can inspect it in raw alert payloads via the syslog
+    endpoint only.
+  - Operator runbooks for the DEGRADED alert tier are in draft;
+    they must be finalised before TEST-to-PROD promotion (tracked
+    as a condition on the hitachi-prod-approval gate).
