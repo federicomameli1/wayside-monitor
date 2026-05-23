@@ -1,0 +1,6 @@
+apiVersion: v2
+name: wayside-monitor
+description: Helm chart for Wayside Monitor — trackside anomaly detection pipeline
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

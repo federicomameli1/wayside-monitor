@@ -1,0 +1,31 @@
+name: wayside-monitor
+namespace: wayside-monitor
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/federicomameli1/wayside-monitor
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+containerPort: 8000
+
+service:
+  type: NodePort
+  port: 80
+  targetPort: 8000
+  # nodePort assegnata automaticamente da Kubernetes a meno di override
+
+env:
+  collector_stream: "wms:sensor-events"
+  engine_stream: "wms:anomaly-events"
+  anomaly_engine_model_ver: "vibration_model_v2.pkl"
+  dead_letter_path: "/tmp/wms-dead-letter.jsonl"
+
+resources:
+  requests:
+    cpu: "50m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
