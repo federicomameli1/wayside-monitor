@@ -1,0 +1,151 @@
+name: Release — Deploy to Prod
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: write           # serve a generate-vdd per committare in VDDs/
+  packages: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run tests
+        run: pytest tests/ -v --tb=short
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify release commit is on main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "${{ github.sha }}" origin/main; then
+            echo "ERROR: Release tag is not reachable from main. Aborting."
+            exit 1
+          fi
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push (digest-pinned)
+        id: push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ github.event.release.tag_name }}
+
+  deploy-prod:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production         # ← gate umano via required reviewer
+    steps:
+      - name: Update gitops prod values (digest-pinned)
+        env:
+          GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}
+          GITOPS_REPO: ${{ vars.GITOPS_REPO }}
+          DIGEST: ${{ needs.build.outputs.digest }}
+          TAG: ${{ github.event.release.tag_name }}
+          IMAGE_REPO: ghcr.io/${{ github.repository }}
+        run: |
+          git clone "https://x-access-token:${GITOPS_TOKEN}@github.com/${GITOPS_REPO}.git" gitops
+          cd gitops
+          sed -i "s|^\([[:space:]]*repository:\).*|\1 ${IMAGE_REPO}@${DIGEST}|" environments/prod/values.yaml
+          sed -i "s|^\([[:space:]]*tag:\).*|\1 \"\"|" environments/prod/values.yaml
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add environments/prod/values.yaml
+          git commit -m "chore: release wayside-monitor ${TAG} to prod (${DIGEST})"
+          git push
+
+  generate-vdd:
+    needs: deploy-prod
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Render VDD draft
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          SHA: ${{ github.sha }}
+          RELEASE_NAME: ${{ github.event.release.name }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+          IMAGE_REPO: ghcr.io/${{ github.repository }}
+        run: |
+          mkdir -p VDDs
+          VDD_FILE="VDDs/VDD-${TAG}.md"
+
+          # Estrae __version__ dai 3 moduli (fallback se grep non trova nulla)
+          MODULES_VERSIONS="$(grep -H '__version__' \
+            sensor_collector/__init__.py \
+            anomaly_engine/__init__.py \
+            alert_dispatcher/__init__.py || echo 'n/a')"
+
+          {
+            echo "# Version Description Document — ${TAG}"
+            echo
+            echo "- **Release name**: ${RELEASE_NAME}"
+            echo "- **Tag**: ${TAG}"
+            echo "- **Commit SHA**: ${SHA}"
+            echo "- **Released at**: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+            echo "- **Image**: ${IMAGE_REPO}:${TAG}"
+            echo "- **Release page**: ${RELEASE_URL}"
+            echo
+            echo "## Module versions"
+            echo
+            echo '```'
+            echo "${MODULES_VERSIONS}"
+            echo '```'
+            echo
+            echo "## Release notes"
+            echo
+            echo "${RELEASE_BODY}"
+            echo
+            echo "---"
+            echo "_Draft auto-generato dal workflow \`deploy-prod\` dopo l'approvazione della promotion produzione. Verrà arricchito dall'agente VDD di Verdict._"
+          } > "$VDD_FILE"
+
+      - name: Commit VDD
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add VDDs/
+          if git diff --staged --quiet; then
+            echo "VDD already up to date"
+            exit 0
+          fi
+          git commit -m "docs(vdd): add VDD draft for ${TAG}"
+          git push origin main

@@ -1,0 +1,31 @@
+name: PR Closed — Cleanup Dev
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove per-PR values from GitOps repo
+        env:
+          GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}
+          GITOPS_REPO: ${{ vars.GITOPS_REPO }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          git clone "https://x-access-token:${GITOPS_TOKEN}@github.com/${GITOPS_REPO}.git" gitops
+          cd gitops
+          rm -rf "environments/dev/pr-${PR_NUMBER}"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add -A
+          if git diff --staged --quiet; then
+            echo "Nothing to cleanup"
+            exit 0
+          fi
+          git commit -m "chore: cleanup wayside-monitor pr-${PR_NUMBER}"
+          git push

@@ -1,0 +1,93 @@
+name: PR — Deploy to Dev
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+concurrency:
+  group: pr-dev-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
+  pull-requests: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Run tests
+        run: pytest tests/ -v --tb=short
+
+  build-and-deploy-dev:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:pr-${{ github.event.pull_request.number }}
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
+
+      - name: Create per-PR values in GitOps repo
+        env:
+          GITOPS_TOKEN: ${{ secrets.GITOPS_TOKEN }}
+          GITOPS_REPO: ${{ vars.GITOPS_REPO }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.sha }}
+          IMAGE_REPO: ghcr.io/${{ github.repository }}
+        run: |
+          git clone "https://x-access-token:${GITOPS_TOKEN}@github.com/${GITOPS_REPO}.git" gitops
+          cd gitops
+          mkdir -p "environments/dev/pr-${PR_NUMBER}"
+          cat > "environments/dev/pr-${PR_NUMBER}/values.yaml" << EOF
+          namespace: pr-${PR_NUMBER}
+
+          replicaCount: 1
+
+          image:
+            repository: ${IMAGE_REPO}
+            tag: "${SHA}"
+            pullPolicy: IfNotPresent
+
+          service:
+            type: NodePort
+            port: 80
+            targetPort: 8000
+
+          env:
+            collector_stream: "wms:sensor-events"
+            engine_stream: "wms:anomaly-events"
+            anomaly_engine_model_ver: "vibration_model_v2.pkl"
+            dead_letter_path: "/tmp/wms-dead-letter.jsonl"
+          EOF
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add "environments/dev/pr-${PR_NUMBER}/"
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git commit -m "chore: deploy wayside-monitor pr-${PR_NUMBER}@${SHA}"
+          git push
