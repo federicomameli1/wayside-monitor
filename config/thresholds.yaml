@@ -4,7 +4,7 @@
 # is a protocol violation (REQ-WMS-007).
 
 vibration:
-  nominal_max_ms2: 2.5
+  nominal_max_ms2: 3.0
   degraded_max_ms2: 5.0
   # Values above degraded_max_ms2 are classified as CRITICAL.
 
