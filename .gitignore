@@ -6,3 +6,6 @@ dist/
 .pytest_cache/
 *.pkl
 /tmp/wms-dead-letter.jsonl
+
+# Helm package artifacts
+*.tgz
