@@ -90,51 +90,50 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout wayside-monitor (main, full history for diff)
+        uses: actions/checkout@v4
         with:
           ref: main
+          fetch-depth: 0
 
-      - name: Render VDD draft
+      - name: Checkout verdict (for vdd_drafter module)
+        uses: actions/checkout@v4
+        with:
+          repository: federicomameli1/verdict
+          ref: main
+          path: .verdict-src
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install --no-cache-dir pydantic
+
+      - name: Run Verdict VDD Drafter
         env:
-          TAG: ${{ github.event.release.tag_name }}
-          SHA: ${{ github.sha }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODEL: ${{ vars.OPENROUTER_MODEL }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
           RELEASE_NAME: ${{ github.event.release.name }}
           RELEASE_BODY: ${{ github.event.release.body }}
           RELEASE_URL: ${{ github.event.release.html_url }}
-          IMAGE_REPO: ghcr.io/${{ github.repository }}
-        run: |
-          mkdir -p VDDs
-          VDD_FILE="VDDs/VDD-${TAG}.md"
+          HEAD_SHA: ${{ github.sha }}
+          SUBJECT_REPO: ${{ github.repository }}
+          IMAGE_REPOSITORY: ghcr.io/${{ github.repository }}
+          DOCS_DIR: docs
+          OUTPUT_DIR: vdd-output
+          PYTHONPATH: ${{ github.workspace }}/.verdict-src
+        run: python .github/scripts/run_vdd_drafter.py
 
-          # Estrae __version__ dai 3 moduli (fallback se grep non trova nulla)
-          MODULES_VERSIONS="$(grep -H '__version__' \
-            sensor_collector/__init__.py \
-            anomaly_engine/__init__.py \
-            alert_dispatcher/__init__.py || echo 'n/a')"
-
-          {
-            echo "# Version Description Document — ${TAG}"
-            echo
-            echo "- **Release name**: ${RELEASE_NAME}"
-            echo "- **Tag**: ${TAG}"
-            echo "- **Commit SHA**: ${SHA}"
-            echo "- **Released at**: $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-            echo "- **Image**: ${IMAGE_REPO}:${TAG}"
-            echo "- **Release page**: ${RELEASE_URL}"
-            echo
-            echo "## Module versions"
-            echo
-            echo '```'
-            echo "${MODULES_VERSIONS}"
-            echo '```'
-            echo
-            echo "## Release notes"
-            echo
-            echo "${RELEASE_BODY}"
-            echo
-            echo "---"
-            echo "_Draft auto-generato dal workflow \`deploy-prod\` dopo l'approvazione della promotion produzione. Verrà arricchito dall'agente VDD di Verdict._"
-          } > "$VDD_FILE"
+      - name: Upload VDD artifact
+        if: always() && hashFiles('vdd-output/VDD.md') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: wayside-vdd-${{ github.event.release.tag_name }}
+          path: vdd-output/
 
       - name: Commit VDD
         env:
@@ -147,5 +146,5 @@ jobs:
             echo "VDD already up to date"
             exit 0
           fi
-          git commit -m "docs(vdd): add VDD draft for ${TAG}"
+          git commit -m "docs(vdd): add VDD for ${TAG}"
           git push origin main
