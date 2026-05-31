@@ -23,6 +23,7 @@ import json
 import os
 import subprocess
 import sys
+import urllib.request
 from pathlib import Path
 
 
@@ -33,11 +34,31 @@ def _require_env(name: str) -> str:
     return value
 
 
+def _fetch_open_tickets(repo: str, token: str) -> list:
+    """Fetch open GitHub Issues for the subject repo (PRs excluded)."""
+    url = f"https://api.github.com/repos/{repo}/issues?state=open&per_page=50"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            items = json.loads(resp.read())
+    except Exception as exc:
+        print(f"WARNING: could not fetch open tickets: {exc}", file=sys.stderr)
+        return []
+    return [i for i in items if "pull_request" not in i]
+
+
 def main() -> int:
     # The verdict repo is cloned by the workflow into VERDICT_PATH and
     # added to PYTHONPATH so we can import the pr_review module.
     from agents.pr_review import PRReviewError, PRReviewInput, PRReviewRunner
-    from agents.pr_review.models import PRMeta
+    from agents.pr_review.models import OpenTicket, PRMeta
 
     pr_number = int(_require_env("PR_NUMBER"))
     pr_meta = PRMeta(
@@ -79,10 +100,26 @@ def main() -> int:
             "check OPENROUTER_API_KEY and HUGGINGFACE_TOKEN are set."
         )
 
+    github_token = os.environ.get("GITHUB_TOKEN", "")
+    subject_repo = os.environ.get("GITHUB_REPOSITORY", "")
+    raw_tickets = _fetch_open_tickets(subject_repo, github_token) if github_token and subject_repo else []
+    open_tickets = [
+        OpenTicket(
+            number=t["number"],
+            title=t.get("title", ""),
+            body=(t.get("body") or "")[:300] or None,
+            labels=[lbl["name"] for lbl in (t.get("labels") or [])],
+        )
+        for t in raw_tickets
+    ]
+    if open_tickets:
+        print(f"Fetched {len(open_tickets)} open ticket(s) as context.")
+
     review_input = PRReviewInput(
         diff_unified=diff,
         docs_dir=docs_dir,
         pr_meta=pr_meta,
+        open_tickets=open_tickets,
     )
 
     try:

@@ -162,3 +162,34 @@ REQ-WMS-025 [COULD]   The system shall support graceful shutdown:
                       on SIGTERM each module shall drain its in-flight
                       queue before exiting, with a maximum drain
                       window of 5 seconds.
+
+--------------------------------------------------------------------
+6. Alert storm prevention and observability
+--------------------------------------------------------------------
+
+REQ-WMS-026 [MUST]    The alert-dispatcher shall suppress duplicate
+                      CRITICAL alerts for the same sensor_id within a
+                      30-second deduplication window. A suppressed
+                      alert shall be counted and logged at INFO level
+                      but NOT delivered to operator endpoints.
+                      The deduplication window resets when the
+                      severity drops below CRITICAL or when 30 seconds
+                      elapse without a new CRITICAL event from the
+                      same sensor.
+
+REQ-WMS-027 [MUST]    The system shall expose a GET /health/stats
+                      endpoint returning a JSON object with at minimum:
+                        - module versions for all three modules
+                        - alert_dispatcher delivery counters
+                          (dispatched, suppressed, dead_lettered)
+                      This endpoint is used by operations dashboards
+                      and the Verdict cluster health poller.
+
+REQ-WMS-028 [SHOULD]  The sensor-collector shall attach a monotonically
+                      increasing sequence number (seq) to every
+                      SensorReading event. The sequence number shall
+                      start at 1 on collector startup and increment by
+                      1 per accepted reading. Downstream consumers may
+                      use the sequence number to detect dropped readings
+                      between consecutive events from the same collector
+                      instance.
