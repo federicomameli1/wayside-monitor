@@ -25,9 +25,13 @@ class AnomalyEvent:
     model_ver: str
     confidence: Optional[float] = None
     source_reading_id: Optional[str] = None
+    # REQ-WMS-029: identifies which collector instance emitted this event,
+    # enabling silence detection correlation across distributed deployments.
+    # Optional — existing consumers on schema_version 1.2 ignore unknown fields.
+    source_collector_id: Optional[str] = None
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "schema_version": "1.2",
             "event_id": self.event_id,
             "sensor_id": self.sensor_id,
@@ -40,3 +44,6 @@ class AnomalyEvent:
             "confidence": self.confidence,
             "source_reading_id": self.source_reading_id,
         }
+        if self.source_collector_id is not None:
+            d["source_collector_id"] = self.source_collector_id
+        return d

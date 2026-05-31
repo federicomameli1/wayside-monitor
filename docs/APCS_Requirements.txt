@@ -187,7 +187,17 @@ REQ-WMS-027 [MUST]    The system shall expose a GET /health/stats
 
 REQ-WMS-028 [SHOULD]  The sensor-collector shall attach a monotonically
                       increasing sequence number (seq) to every
-                      SensorReading event. The sequence number shall
+                      SensorReading event.
+
+REQ-WMS-029 [MUST]    The sensor-collector shall detect sensor silence:
+                      if a registered sensor has not produced a valid
+                      reading within a configurable timeout window
+                      (default 60 seconds), the collector shall emit
+                      a DEGRADED health alert identifying the silent
+                      sensor by sensor_id. The alert shall be cleared
+                      automatically when the sensor resumes reporting.
+                      The silence timeout shall be configurable via the
+                      SENSOR_SILENCE_TIMEOUT_SECONDS environment variable. The sequence number shall
                       start at 1 on collector startup and increment by
                       1 per accepted reading. Downstream consumers may
                       use the sequence number to detect dropped readings
