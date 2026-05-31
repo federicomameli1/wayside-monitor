@@ -33,6 +33,7 @@ class SensorCollector:
         self._publish = publish
         self._accepted = 0
         self._dropped = 0
+        self._seq = 0  # REQ-WMS-028: monotonic sequence counter
 
     def ingest(self, raw: Dict[str, Any]) -> Optional[SensorReading]:
         sensor_type = raw.get("sensor_type", "")
@@ -48,6 +49,7 @@ class SensorCollector:
             return None
 
         unit = self._registry.unit_for(sensor_type) or raw.get("unit", "")
+        self._seq += 1
         reading = SensorReading(
             sensor_id=sensor_id,
             sensor_type=sensor_type,
@@ -56,6 +58,7 @@ class SensorCollector:
             timestamp=datetime.fromisoformat(raw["timestamp"])
             if "timestamp" in raw
             else datetime.now(timezone.utc),
+            seq=self._seq,  # REQ-WMS-028
         )
         self._publish(STREAM_NAME, reading.to_event())
         self._accepted += 1

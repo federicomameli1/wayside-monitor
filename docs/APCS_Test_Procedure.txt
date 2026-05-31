@@ -1,7 +1,7 @@
 Project        : Wayside Monitor System (WMS)
 Document       : Pre-Promotion Test Procedure
-Candidate      : 2.1.0-rc.1
-Last update    : 10-May-2026
+Candidate      : 2.2.0-rc.1
+Last update    : 31-May-2026
 
 Scope
 -----
@@ -172,3 +172,45 @@ Steps:
   3. Compare against the reference checksum in the Module Version
      Inventory (a3f9…d821).
 Pass criterion: checksums match exactly.
+
+
+--------------------------------------------------------------------
+TC-WMS-013  CRITICAL alert deduplication                    [MUST]
+--------------------------------------------------------------------
+Traces to  : REQ-WMS-026
+Steps:
+  1. Send 5 consecutive CRITICAL events for sensor S-VIBE-01 within
+     a 10-second window to alert-dispatcher.
+  2. Capture the number of deliveries made to operator endpoints.
+  3. Inspect the suppressed_count counter via GET /health/stats.
+Pass criterion:
+  Step 2 — exactly 1 delivery reaches operator endpoints.
+  Step 3 — suppressed_count == 4.
+  The deduplication window must not suppress events from a
+  different sensor_id.
+
+--------------------------------------------------------------------
+TC-WMS-014  Health stats endpoint availability              [MUST]
+--------------------------------------------------------------------
+Traces to  : REQ-WMS-027
+Steps:
+  1. Start the wayside-monitor container.
+  2. Issue GET /health/stats.
+  3. Validate response structure.
+Pass criterion:
+  HTTP 200 with JSON containing keys: module_versions,
+  alert_dispatcher_stats (with sub-keys: dispatched, suppressed,
+  dead_lettered).
+
+--------------------------------------------------------------------
+TC-WMS-015  Sensor sequence number continuity               [SHOULD]
+--------------------------------------------------------------------
+Traces to  : REQ-WMS-028
+Steps:
+  1. Start sensor-collector and inject 20 valid sensor readings.
+  2. Capture all 20 events from the downstream stream.
+  3. Extract the seq field from each event.
+Pass criterion:
+  seq values form an unbroken sequence 1..20 in event order.
+  Each event contains the seq field (non-null, positive integer).
+Note: failure generates a soft warning, not a HOLD.
