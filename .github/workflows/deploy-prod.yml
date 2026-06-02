@@ -110,7 +110,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install --no-cache-dir pydantic
+        run: pip install --no-cache-dir pydantic python-docx
 
       - name: Run Verdict VDD Drafter
         env:
