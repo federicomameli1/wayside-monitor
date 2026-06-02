@@ -1,7 +1,7 @@
 ## Introduction
 
 ### Purpose
-This document provides the formal version description for the Wayside Monitor System (WMS) release v0.4, detailing the software configuration, changes, and validation evidence required for promotion.
+This document provides the formal version description for the Wayside Monitor System (WMS) release v0.4, detailing the software configuration, changes, and validation evidence required for promotion from DEV to TEST.
 
 ### Applicability
 This release applies to the trackside anomaly detection pipeline, specifically the `anomaly_engine`, `alert_dispatcher`, and `sensor_collector` modules, and the associated deployment configuration.
@@ -21,7 +21,7 @@ This release applies to the trackside anomaly detection pipeline, specifically t
 - APCS_Emails.txt (Release Email Thread)
 
 ### Description of Changes from the Previous Revision
-This release adds python-docx dependency to the CI workflow for DOCX generation capability and updates the VDD drafter script to output both markdown and DOCX formats. No functional changes to the WMS modules themselves.
+This release introduces the three-class vibration anomaly classifier in anomaly-engine and the corresponding payload update in alert-dispatcher. The sensor_collector module adds monotonic sequence number support per REQ-WMS-028 and sensor silence detection per REQ-WMS-029. The alert_dispatcher adds CRITICAL alert deduplication per REQ-WMS-026 and statistics endpoint per REQ-WMS-027.
 
 ## Version Description
 
@@ -44,58 +44,4 @@ This release adds python-docx dependency to the CI workflow for DOCX generation 
 ### Requirements specification documents
 - **Requirements Master List**: APCS_Requirements.txt (Candidate 2.1.0-rc.1), including REQ-WMS-001 through REQ-WMS-029.
 
-### Software conception, design, programming documents
-_Evidence not available in this release bundle._
-
-### Testing documentation
-- **Pre-Promotion Test Procedure**: APCS_Test_Procedure.txt.
-- **Test Results**: 
-    - TC-WMS-001, TC-WMS-002, TC-WMS-004 through TC-WMS-009: PASS.
-    - TC-WMS-003 (Vibration model accuracy): PASS (97.2% accuracy).
-    - TC-WMS-010, TC-WMS-011: PASS (with soft warnings).
-    - TC-WMS-012 (Checksum verification): PASS.
-
-### Other documents
-- **Release Email Thread**: APCS_Emails.txt (Safety sign-off by Sofia Bianchi).
-
-## Sw Version Build
-
-### SW Configuration items list (source files)
-- `alert_dispatcher/dispatcher.py`
-- `alert_dispatcher/models.py`
-- `anomaly_engine/models.py`
-- `sensor_collector/collector.py`
-- `sensor_collector/models.py`
-- `config/thresholds.yaml`
-- `deploy/helm/Chart.yaml`
-- `deploy/helm/templates/deployment.yaml`
-- `deploy/docker/app.py`
-
-### Build Environment for Reproducibility
-- **Python Version**: 3.11
-- **Dependencies**: `pydantic`, `python-docx`
-- **CI Pipeline**: GitHub Actions (as defined in `.github/workflows/`)
-
-## Changes Incorporated
-
-### List of changes taken into account in this SW version
-- **CI/CD Infrastructure**:
-    - `run_vdd_drafter.py`: Added DOCX output generation capability (writes both `.md` and `.docx` files).
-    - `deploy-prod.yml`: Added `python-docx` to pip install dependencies.
-
-### List of changes NOT taken into account in this SW version
-- Migration of `sensor-collector` to async I/O (planned for v1.4.0).
-- DEGRADED alert batching (REQ-WMS-017, deferred to `alert-dispatcher` v1.3.0).
-- Prometheus `/metrics` endpoint on `sensor-collector` (REQ-WMS-004).
-- Graceful shutdown drain (REQ-WMS-025).
-
-## Sw Version Limitation
-- **Backward Compatibility**: `alert-dispatcher` 1.2.0 is NOT backward compatible with `anomaly-engine` 2.0.x payloads; incorrect deployment order will cause event rejection.
-- **Operational**: The `confidence` field is not yet surfaced in the ops dashboard (accessible via syslog only).
-- **Documentation**: Operator runbooks for the DEGRADED alert tier are currently in draft.
-
-## Installation Instructions
-_Evidence not available in this release bundle._
-
----
-_Auto-drafted by Verdict on release `v0.4`._
+### Software conception, design, programming
