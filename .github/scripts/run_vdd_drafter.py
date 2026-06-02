@@ -160,6 +160,12 @@ def main() -> int:
     repo_output_file.parent.mkdir(parents=True, exist_ok=True)
     repo_output_file.write_text(output.vdd_markdown, encoding="utf-8")
 
+    if output.vdd_docx:
+        docx_output = repo_output_file.with_suffix(".docx")
+        docx_output.write_bytes(output.vdd_docx)
+        (output_dir / "VDD.docx").write_bytes(output.vdd_docx)
+        print(f"VDD .docx generated: {docx_output} ({len(output.vdd_docx):,} bytes)")
+
     print(
         f"VDD drafted: {repo_output_file} "
         f"(sections present: {len(output.sections_present)}, "
