@@ -110,7 +110,9 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install --no-cache-dir pydantic python-docx
+        run: |
+          pip install --no-cache-dir pydantic python-docx
+          sudo apt-get install -y --no-install-recommends libreoffice-writer
 
       - name: Run Verdict VDD Drafter
         env:
@@ -127,6 +129,14 @@ jobs:
           OUTPUT_DIR: vdd-output
           PYTHONPATH: ${{ github.workspace }}/.verdict-src
         run: python .github/scripts/run_vdd_drafter.py
+
+      - name: Convert VDD DOCX to PDF
+        if: hashFiles('vdd-output/VDD.docx') != ''
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          libreoffice --headless --convert-to pdf --outdir VDDs/ VDDs/VDD-${TAG}.docx
+          cp VDDs/VDD-${TAG}.pdf vdd-output/VDD.pdf || true
 
       - name: Upload VDD artifact
         if: always() && hashFiles('vdd-output/VDD.md') != ''
