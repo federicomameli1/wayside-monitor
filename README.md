@@ -63,9 +63,12 @@ APCS release documents are in [docs/](docs/):
 - [APCS_VDD.txt](docs/APCS_VDD.txt)
 - [APCS_Emails.txt](docs/APCS_Emails.txt)
 
-## CI integration with challenge-app
+## CI integration with Verdict
 
-On every push to `main`, the CI workflow notifies `challenge-app` via webhook.
-`challenge-app` runs Agent 4 against the APCS bundle in `docs/` and produces
-a release-readiness report. Configure `CHALLENGE_APP_WEBHOOK` as a repository
-secret pointing to the challenge-app instance on CrownLabs.
+On every push to `main`, the CI workflow triggers a PR review and VDD draft via
+[Verdict](https://github.com/federicomameli1/verdict) — the release readiness
+console deployed on CrownLabs. Verdict runs LLM-based analysis against the APCS
+bundle in `docs/` and posts a GO / HOLD verdict as a PR comment.
+
+Configure `VERDICT_WEBHOOK` as a repository secret pointing to the Verdict
+instance on CrownLabs.
