@@ -46,35 +46,9 @@ def classify_vibration(value: float) -> Tuple[Severity, float]:
     return Severity.CRITICAL, round(confidence, 3)
 
 
-# REQ-WMS-030: per-sensor last wear reading for rate-of-change detection.
-_wear_last: dict = {}
-
-# BUG-1: threshold is 0.5 but REQ-WMS-030 requires 0.3 mm.
-_WEAR_RATE_THRESHOLD = 0.5
-
-
-def classify_rail_wear(value: float, sensor_id: str = "") -> Tuple[Severity, float]:
-    """
-    Threshold + rate-of-change classifier for rail wear (mm).
-    REQ-WMS-030: escalate to CRITICAL if delta between consecutive
-    readings from the same sensor exceeds _WEAR_RATE_THRESHOLD.
-    """
-    wear_rate_alert = False
-    if sensor_id:
-        try:
-            prev = _wear_last[sensor_id]
-            if abs(value - prev) > _WEAR_RATE_THRESHOLD:
-                wear_rate_alert = True
-        except Exception:
-            # BUG-2: silently swallows KeyError on first reading —
-            # violates REQ-WMS-022 (no silent exception swallowing on hot path).
-            pass
-        _wear_last[sensor_id] = value
-    # BUG-3: wear_rate_alert is computed but never returned or added to
-    # AnomalyEvent — the payload field required by REQ-WMS-030 is missing.
-    # BUG-4: sequence number gap detection (REQ-WMS-030 state reset) not implemented.
-
-    if wear_rate_alert or value >= 8.0:
+def classify_rail_wear(value: float) -> Tuple[Severity, float]:
+    """Simple threshold classifier for rail wear (mm)."""
+    if value >= 8.0:
         return Severity.CRITICAL, 0.99
     if value >= 5.0:
         return Severity.DEGRADED, 0.88

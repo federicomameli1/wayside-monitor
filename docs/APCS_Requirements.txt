@@ -164,25 +164,7 @@ REQ-WMS-025 [COULD]   The system shall support graceful shutdown:
                       window of 5 seconds.
 
 --------------------------------------------------------------------
-6. Rail wear rate-of-change detection
---------------------------------------------------------------------
-
-REQ-WMS-030 [MUST]    The anomaly-engine shall track the rate of change
-                      of RAIL_WEAR readings per sensor_id. If the
-                      absolute delta between two consecutive readings
-                      from the same sensor exceeds 0.3 mm, the
-                      classification shall be escalated to CRITICAL
-                      regardless of the absolute wear value. The event
-                      payload shall include a boolean field
-                      wear_rate_alert set to true when rate-of-change
-                      escalation is applied. The per-sensor tracking
-                      state shall be reset when a sequence number gap
-                      greater than 1 is detected between consecutive
-                      readings from the same sensor, to prevent false
-                      escalations after data loss.
-
---------------------------------------------------------------------
-7. Alert storm prevention and observability
+6. Alert storm prevention and observability
 --------------------------------------------------------------------
 
 REQ-WMS-026 [MUST]    The alert-dispatcher shall suppress duplicate

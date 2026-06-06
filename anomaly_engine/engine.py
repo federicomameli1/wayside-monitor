@@ -53,8 +53,6 @@ class AnomalyEngine:
 
         try:
             value = float(event["value"])
-            # BUG: sensor_id not passed to classify_rail_wear — rate-of-change
-            # tracking in REQ-WMS-030 never activates for any sensor.
             severity, confidence = classify(value)
             ts = datetime.fromisoformat(event["timestamp"]) if "timestamp" in event else datetime.now(timezone.utc)
 
